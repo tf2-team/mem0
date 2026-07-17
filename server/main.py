@@ -37,7 +37,7 @@ from server_state import (
 )
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 load_dotenv()
 
@@ -55,7 +55,7 @@ SENSITIVE_CONFIG_KEYS = {
     "secret",
     "token",
 }
-SKIPPED_REQUEST_LOG_PATHS = {"/api/health", "/docs", "/redoc", "/openapi.json"}
+SKIPPED_REQUEST_LOG_PATHS = {"/api/health", "/health/live", "/health/ready", "/docs", "/redoc", "/openapi.json"}
 SKIPPED_REQUEST_LOG_PREFIXES = ("/requests",)
 
 BUNDLED_LLM_PROVIDERS = ("openai", "anthropic", "gemini", "groq")
@@ -189,6 +189,50 @@ app.include_router(auth_router.router)
 app.include_router(api_keys_router.router)
 app.include_router(entities_router.router)
 app.include_router(requests_router.router)
+
+
+def _check_app_database() -> None:
+    with SessionLocal() as session:
+        session.execute(text("SELECT 1"))
+
+
+def _check_memory_store() -> None:
+    memory = get_memory_instance()
+    vector_store = getattr(memory, "vector_store", None)
+    if vector_store is None:
+        raise RuntimeError("Memory vector store is not initialized.")
+    if hasattr(vector_store, "list_cols"):
+        vector_store.list_cols()
+
+
+@app.get("/health/live", include_in_schema=False)
+def liveness():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", include_in_schema=False)
+def readiness():
+    checks = {
+        "app_database": "ok",
+        "memory_store": "ok",
+    }
+
+    try:
+        _check_app_database()
+    except Exception as exc:
+        checks["app_database"] = "failed"
+        logging.warning("Readiness app database check failed: %s", exc)
+
+    try:
+        _check_memory_store()
+    except Exception as exc:
+        checks["memory_store"] = "failed"
+        logging.warning("Readiness memory store check failed: %s", exc)
+
+    if any(status != "ok" for status in checks.values()):
+        raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
+
+    return {"status": "ready", "checks": checks}
 
 
 class Message(BaseModel):
