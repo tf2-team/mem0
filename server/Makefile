@@ -1,4 +1,4 @@
-.PHONY: up down clean logs seed wait-api wait-dashboard bootstrap health build run_local reset-admin-password prune-logs
+.PHONY: up down clean logs seed wait-api wait-dashboard bootstrap health build run_local reset-admin-password prune-logs cleanup-expired-memories
 
 OUTPUT ?= text
 API_URL ?= http://localhost:8888
@@ -34,7 +34,7 @@ seed:
 
 wait-api:
 	@echo "Waiting for API..."
-	@until curl -fsS "$(API_URL)/auth/setup-status" >/dev/null 2>&1; do sleep 2; done
+	@until curl -fsS "$(API_URL)/health/ready" >/dev/null 2>&1; do sleep 2; done
 
 wait-dashboard:
 	@echo "Waiting for dashboard..."
@@ -43,7 +43,8 @@ wait-dashboard:
 bootstrap: up wait-api wait-dashboard seed
 
 health:
-	@echo "API:       $$(curl -s -o /dev/null -w '%{http_code}' "$(API_URL)/docs")"
+	@echo "API live:  $$(curl -s -o /dev/null -w '%{http_code}' "$(API_URL)/health/live")"
+	@echo "API ready: $$(curl -s -o /dev/null -w '%{http_code}' "$(API_URL)/health/ready")"
 	@echo "Dashboard: $$(curl -s -o /dev/null -w '%{http_code}' "$(DASHBOARD_URL)/api/health")"
 	@echo "Postgres:  $$(docker compose exec -T postgres pg_isready -q && echo 'ok' || echo 'down')"
 
@@ -54,6 +55,9 @@ reset-admin-password:
 
 prune-logs:
 	@docker compose exec -T -e REQUEST_LOG_RETENTION_DAYS="$(REQUEST_LOG_RETENTION_DAYS)" -e PYTHONPATH=/app mem0 python scripts/prune_request_logs.py
+
+cleanup-expired-memories:
+	@docker compose exec -T -e MEM0_EXPIRED_MEMORY_CUTOFF_DATE="$(MEM0_EXPIRED_MEMORY_CUTOFF_DATE)" -e PYTHONPATH=/app mem0 python scripts/cleanup_expired_memories.py
 
 build:
 	docker build -t mem0-api-server .
