@@ -19,6 +19,8 @@ class PGVectorConfig(BaseModel):
     sslmode: Optional[str] = Field(None, description="SSL mode for PostgreSQL connection (e.g., 'require', 'prefer', 'disable')")
     connection_string: Optional[str] = Field(None, description="PostgreSQL connection string (overrides individual connection parameters)")
     connection_pool: Optional[Any] = Field(None, description="psycopg connection pool object (overrides connection string and individual parameters)")
+    use_aws_iam_auth: bool = Field(False, description="Generate RDS IAM tokens instead of using a static PostgreSQL password")
+    aws_region: Optional[str] = Field(None, description="AWS region used to generate RDS IAM authentication tokens")
 
     @model_validator(mode="before")
     def check_auth_and_connection(cls, values):

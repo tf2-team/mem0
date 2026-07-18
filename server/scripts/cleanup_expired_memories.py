@@ -32,6 +32,9 @@ def _build_store() -> PGVector:
         password=os.environ.get("POSTGRES_PASSWORD", "postgres"),
         host=os.environ.get("POSTGRES_HOST", "postgres"),
         port=int(os.environ.get("POSTGRES_PORT", "5432")),
+        sslmode=os.environ.get("POSTGRES_SSLMODE", "require"),
+        use_aws_iam_auth=os.environ.get("MEM0_RDS_IAM_AUTH", "false").lower() in {"1", "true", "yes", "on"},
+        aws_region=os.environ.get("AWS_REGION"),
         diskann=False,
         hnsw=False,
     )

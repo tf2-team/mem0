@@ -1,9 +1,10 @@
 import json
 import logging
+import os
 import re
 from contextlib import contextmanager
 from typing import Any, List, Optional
-from urllib.parse import parse_qsl, urlencode, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from pydantic import BaseModel
 
@@ -30,6 +31,7 @@ except ImportError:
         )
 
 from mem0.vector_stores.base import VectorStoreBase
+from mem0.utils.aws_rds_iam import generate_rds_iam_auth_token
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +141,37 @@ class OutputData(BaseModel):
     payload: Optional[dict]
 
 
+class _RdsIamConnectionPool:
+    """Open a fresh psycopg connection with a new RDS IAM token each time.
+
+    An RDS IAM token expires after 15 minutes. A regular psycopg pool stores
+    its password in conninfo, which can make later replacement connections use
+    an expired token. This lightweight pool wrapper keeps no password and is
+    deliberately used only when IAM database authentication is enabled.
+    """
+
+    def __init__(self, conninfo: str, host: str, port: int, user: str, region: str | None):
+        self._conninfo = conninfo
+        self._host = host
+        self._port = port
+        self._user = user
+        self._region = region
+
+    @contextmanager
+    def connection(self):
+        from psycopg import connect
+
+        token = generate_rds_iam_auth_token(self._host, self._port, self._user, self._region)
+        conn = connect(self._conninfo, password=token)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def close(self) -> None:
+        """Match the psycopg pool close interface; connections are ephemeral."""
+
+
 class PGVector(VectorStoreBase):
     def __init__(
         self,
@@ -156,6 +189,8 @@ class PGVector(VectorStoreBase):
         sslmode=None,
         connection_string=None,
         connection_pool=None,
+        use_aws_iam_auth=False,
+        aws_region=None,
     ):
         """
         Initialize the PGVector database.
@@ -175,6 +210,8 @@ class PGVector(VectorStoreBase):
             sslmode (str, optional): SSL mode for PostgreSQL connection (e.g., 'require', 'prefer', 'disable')
             connection_string (str, optional): PostgreSQL connection string (overrides individual connection parameters)
             connection_pool (Any, optional): psycopg2 connection pool object (overrides connection string and individual parameters)
+            use_aws_iam_auth (bool): Generate an RDS IAM token for each psycopg3 connection.
+            aws_region (str, optional): AWS region used to sign RDS IAM tokens.
         """
         self.collection_name = collection_name
         self.use_diskann = diskann
@@ -183,8 +220,27 @@ class PGVector(VectorStoreBase):
         self.connection_pool = None
         self._collection_ensured = False
 
+        if use_aws_iam_auth:
+            if PSYCOPG_VERSION != 3:
+                raise RuntimeError("RDS IAM authentication requires psycopg3.")
+            if connection_pool is not None or connection_string is not None:
+                raise ValueError("RDS IAM authentication requires individual PostgreSQL connection parameters.")
+
+            connection_string = f"postgresql://{quote(str(user), safe='')}@{host}:{port}/{dbname}"
+            if sslmode:
+                connection_string = _with_sslmode(connection_string, sslmode)
+            self.connection_pool = _RdsIamConnectionPool(
+                connection_string,
+                host,
+                int(port),
+                user,
+                aws_region or os.getenv("AWS_REGION"),
+            )
+
         # Connection setup with priority: connection_pool > connection_string > individual parameters
-        if connection_pool is not None:
+        if self.connection_pool is not None:
+            pass
+        elif connection_pool is not None:
             # Use provided connection pool
             self.connection_pool = connection_pool
         elif connection_string:
