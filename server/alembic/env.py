@@ -1,9 +1,8 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
 
-from db import Base, _build_database_url
+from db import Base, _build_database_url, engine
 
 # Import models so Base.metadata picks up all tables
 import models  # noqa: F401
@@ -27,11 +26,10 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Reuse the server engine so IAM mode injects a fresh RDS token when the
+    # migration Job opens its connection. The default password mode remains
+    # unchanged because the engine still uses _build_database_url().
+    connectable = engine
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():

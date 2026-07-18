@@ -110,6 +110,7 @@ POSTGRES_DB = os.environ.get("POSTGRES_DB", "postgres")
 POSTGRES_USER = os.environ.get("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "postgres")
 POSTGRES_COLLECTION_NAME = os.environ.get("POSTGRES_COLLECTION_NAME", "memories")
+RDS_IAM_AUTH = os.environ.get("MEM0_RDS_IAM_AUTH", "false").lower() in {"1", "true", "yes", "on"}
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 HISTORY_DB_PATH = os.environ.get("HISTORY_DB_PATH", "/app/history/history.db")
@@ -137,6 +138,9 @@ DEFAULT_CONFIG = {
             "dbname": POSTGRES_DB,
             "user": POSTGRES_USER,
             "password": POSTGRES_PASSWORD,
+            "use_aws_iam_auth": RDS_IAM_AUTH,
+            "aws_region": os.environ.get("AWS_REGION"),
+            "sslmode": os.environ.get("POSTGRES_SSLMODE", "require"),
             "collection_name": POSTGRES_COLLECTION_NAME,
             "embedding_model_dims": DEFAULT_EMBEDDING_DIMS,
         },
