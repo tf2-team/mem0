@@ -83,6 +83,21 @@ class TestSearchLimit:
         assert "top_k" not in kwargs
 
 
+def test_default_llm_uses_bedrock_nova(monkeypatch):
+    """The self-hosted default must not require a Groq API key."""
+    mock_memory = MagicMock()
+    monkeypatch.setenv("MEM0_LLM_PROVIDER", "aws_bedrock")
+    monkeypatch.setenv("MEM0_DEFAULT_LLM_MODEL", "us.amazon.nova-2-lite-v1:0")
+    monkeypatch.setenv("JWT_SECRET", "test-secret-that-is-long-enough")
+    monkeypatch.setenv("ADMIN_API_KEY", "test-admin-key-that-is-long-enough")
+    with patch("mem0.Memory.from_config", return_value=mock_memory):
+        import server.main as server_main
+        importlib.reload(server_main)
+
+    assert server_main.DEFAULT_CONFIG["llm"]["provider"] == "aws_bedrock"
+    assert server_main.DEFAULT_CONFIG["llm"]["config"]["model"] == "us.amazon.nova-2-lite-v1:0"
+
+
 # ===========================================================================
 # SearchRequest: threshold parameter
 # ===========================================================================
