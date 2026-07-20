@@ -175,23 +175,22 @@ class AWSBedrockLLM(LLMBase):
 
         return "\n".join(formatted_messages)
 
-    def _format_messages_amazon(self, messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    def _format_messages_amazon(self, messages: List[Dict[str, str]]) -> tuple[List[Dict[str, Any]], Optional[str]]:
         """Format messages for Amazon models (including Nova)."""
         formatted_messages = []
-        
+        system_parts = []
+
         for message in messages:
             role = message["role"]
             content = message["content"]
-            
+            text = content if isinstance(content, str) else str(content)
+
             if role == "system":
-                # Amazon models support system messages
-                formatted_messages.append({"role": "system", "content": content})
-            elif role == "user":
-                formatted_messages.append({"role": "user", "content": content})
-            elif role == "assistant":
-                formatted_messages.append({"role": "assistant", "content": content})
-        
-        return formatted_messages
+                system_parts.append(text)
+            elif role in ("user", "assistant"):
+                formatted_messages.append({"role": role, "content": [{"text": text}]})
+
+        return formatted_messages, "\n".join(system_parts) or None
 
     def _format_messages_meta(self, messages: List[Dict[str, str]]) -> str:
         """Format messages for Meta models."""
@@ -383,6 +382,13 @@ class AWSBedrockLLM(LLMBase):
 
             return processed_response
 
+        # Converse returns a response dict directly; InvokeModel returns a body stream.
+        if "output" in response:
+            for item in response["output"]["message"]["content"]:
+                if "text" in item:
+                    return item["text"]
+            return ""
+
         # Handle regular text responses
         try:
             response_body = response.get("body").read().decode()
@@ -522,7 +528,7 @@ class AWSBedrockLLM(LLMBase):
         if self.provider == "anthropic":
             formatted_messages, system_message = self._format_messages_anthropic(messages)
         elif self.provider == "amazon":
-            formatted_messages = self._format_messages_amazon(messages)
+            formatted_messages, system_message = self._format_messages_amazon(messages)
         else:
             formatted_messages = [{"role": "user", "content": [{"text": messages[-1]["content"]}]}]
 
@@ -540,7 +546,7 @@ class AWSBedrockLLM(LLMBase):
             "inferenceConfig": self._build_inference_config(),
         }
 
-        # Add system message if present (for Anthropic)
+        # Add system message if present.
         if system_message:
             converse_params["system"] = [{"text": system_message}]
 
@@ -616,12 +622,15 @@ class AWSBedrockLLM(LLMBase):
 
         elif self.provider == "amazon" and "nova" in self.config.model.lower():
             # Nova models use the Converse API even without tools
-            formatted_messages = self._format_messages_amazon(messages)
-            response = self.client.converse(
-                modelId=self.config.model,
-                messages=formatted_messages,
-                inferenceConfig=self._build_inference_config(),
-            )
+            formatted_messages, system_message = self._format_messages_amazon(messages)
+            converse_params = {
+                "modelId": self.config.model,
+                "messages": formatted_messages,
+                "inferenceConfig": self._build_inference_config(),
+            }
+            if system_message:
+                converse_params["system"] = [{"text": system_message}]
+            response = self.client.converse(**converse_params)
             return self._parse_response(response)
         else:
             # For other providers and legacy Amazon models (like Titan)

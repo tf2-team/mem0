@@ -112,9 +112,10 @@ POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "postgres")
 POSTGRES_COLLECTION_NAME = os.environ.get("POSTGRES_COLLECTION_NAME", "memories")
 RDS_IAM_AUTH = os.environ.get("MEM0_RDS_IAM_AUTH", "false").lower() in {"1", "true", "yes", "on"}
 
+MEM0_LLM_PROVIDER = os.environ.get("MEM0_LLM_PROVIDER", "aws_bedrock")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 HISTORY_DB_PATH = os.environ.get("HISTORY_DB_PATH", "/app/history/history.db")
-DEFAULT_LLM_MODEL = os.environ.get("MEM0_DEFAULT_LLM_MODEL", "llama-3.3-70b-versatile")
+DEFAULT_LLM_MODEL = os.environ.get("MEM0_DEFAULT_LLM_MODEL", "us.amazon.nova-2-lite-v1:0")
 DEFAULT_EMBEDDER_MODEL = os.environ.get(
     "MEM0_DEFAULT_EMBEDDER_MODEL",
     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
@@ -146,8 +147,16 @@ DEFAULT_CONFIG = {
         },
     },
     "llm": {
-        "provider": "groq",
-        "config": {"api_key": GROQ_API_KEY, "temperature": 0.2, "model": DEFAULT_LLM_MODEL},
+        "provider": MEM0_LLM_PROVIDER,
+        "config": (
+            {
+                "model": DEFAULT_LLM_MODEL,
+                "temperature": 0.2,
+                "aws_region": os.environ.get("AWS_REGION", "us-east-1"),
+            }
+            if MEM0_LLM_PROVIDER == "aws_bedrock"
+            else {"api_key": GROQ_API_KEY, "temperature": 0.2, "model": DEFAULT_LLM_MODEL}
+        ),
     },
     "embedder": {
         "provider": "fastembed",

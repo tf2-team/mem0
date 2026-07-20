@@ -333,6 +333,17 @@ class TestGenerateResponseConverse:
         _, kwargs = mock_boto3.converse.call_args
         assert "topP" not in kwargs["inferenceConfig"]
 
+    def test_nova_uses_converse_content_blocks_and_reads_text(self, mock_boto3):
+        mock_boto3.converse.return_value = _converse_response("OK")
+        llm = _make_llm("us.amazon.nova-2-lite-v1:0", mock_boto3)
+
+        result = llm.generate_response(MESSAGES)
+
+        _, kwargs = mock_boto3.converse.call_args
+        assert kwargs["messages"][0]["content"] == [{"text": "Hello"}]
+        assert kwargs["system"] == [{"text": "You are a helpful assistant."}]
+        assert result == "OK"
+
     def test_anthropic_model_kwargs_top_p_still_omits_top_p_in_converse(self, mock_boto3):
         """top_p injected via model_kwargs must not add topP for Anthropic Converse."""
         mock_boto3.converse.return_value = _converse_response()
